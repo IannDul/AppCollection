@@ -68,7 +68,6 @@ public class Server {
                     Autosaver.autosave(instances);
 
                     list.clear();
-
                 }
             }
         }
