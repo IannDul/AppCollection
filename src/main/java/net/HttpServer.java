@@ -18,21 +18,19 @@ import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 
 public class HttpServer {
     private static final Instances instances = new Instances();
-    private final String host;
-    private final int port;
     private final ServerSocketChannel serverSocketChannel;
-    private SocketChannel socketChannel;
     private int statusCode;
     Map<String, String> accounts;
     ArrayList<String> activeLogins;
+    ExecutorService service = Executors.newFixedThreadPool(3);
 
     public HttpServer(String host, int port) throws IOException {
-        this.host = host;
-        this.port = port;
         instances.outPutter = new ServerOutput();
         serverSocketChannel = ServerSocketChannel.open();
         serverSocketChannel.bind(new InetSocketAddress(host, port));
@@ -44,33 +42,67 @@ public class HttpServer {
     public static void main(String[] args) {
     }
 
-    private void writeLayer(List<String> list, SocketChannel socketChannel) throws IOException {
-        StringBuilder result = new StringBuilder(
-                list.stream()
-                        .mapToInt(String::length)
-                        .sum()
-        );
-        String response = "";
+    private void writeLayer(SocketChannel socketChannel) throws IOException {
+        List<String> list = instances.outPutter.compound();
+            StringBuilder result = new StringBuilder(
+                    list.stream()
+                            .mapToInt(String::length)
+                            .sum()
+            );
+            String response = "";
 
-        for (String msg : list) {
-            result.append(msg);
-        }
-        response = ServerResponseMaker.responseMaker(statusCode, "text/plain", result.toString());
-        System.out.println(response);
-        try {
-            write(response, socketChannel);
-        } catch (NullPointerException e) {
-            instances.outPutter.output(e.getMessage());
-        }
+            for (String msg : list) {
+                result.append(msg);
+            }
+            response = ServerResponseMaker.responseMaker(statusCode, "text/plain", result.toString());
+            System.out.println(response);
+            try {
+                try {
+                    write(response, socketChannel);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            } catch (NullPointerException e) {
+                instances.outPutter.output(e.getMessage());
+            }
+            list.clear();
     }
 
+    private void commandWay(SocketChannel socketChannel){
+        Runnable task = () -> {
+            String request = "";
+            ByteBuffer buffer = ByteBuffer.allocate(20008);
+            buffer.clear();
+            try {
+                socketChannel.read(buffer);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            buffer.flip();
+
+            String input = StandardCharsets.UTF_8.decode(buffer).toString();
+            request = parseInput(input);
+            commandExecution(request, socketChannel);
+
+        };
+        service.execute(task);
+    }
+
+
     private void write(String message, SocketChannel socketChannel) throws IOException {
-        ByteBuffer buffer = ByteBuffer.allocate(20008);
-        buffer.clear();
-        buffer.put(message.getBytes(StandardCharsets.UTF_8));
-        buffer.flip();
-        socketChannel.write(buffer);
-        System.out.println(StandardCharsets.UTF_8.decode(buffer));
+        Runnable write = () -> {
+            ByteBuffer buffer = ByteBuffer.allocate(20008);
+            buffer.clear();
+            buffer.put(message.getBytes(StandardCharsets.UTF_8));
+            buffer.flip();
+            try {
+                socketChannel.write(buffer);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            System.out.println(StandardCharsets.UTF_8.decode(buffer));
+        };
+        service.execute(write);
     }
 
     private String parseInput(String input) {
@@ -100,22 +132,10 @@ public class HttpServer {
         return parseInput(input);
     }
 
-    public void run() throws IOException, NullPointerException {
-
-        try {
-            instances.dao = FileManipulator.get();
-        } catch (RuntimeException e) {
-            instances.outPutter.output(e.getMessage());
-            instances.dao = new DragonDAO();
-        }
-
-
-        while (true) {
-            socketChannel = serverSocketChannel.accept();
-            String input = read(socketChannel);
-            statusCode = 200;
+    private void commandExecution(String request, SocketChannel socketChannel){
+        Runnable execution = () -> {
             try {
-                Command command = Command.restoreFromProperties(Json.fromJson(Json.parse(input), CommandProperties.class));
+                Command command = Command.restoreFromProperties(Json.fromJson(Json.parse(request), CommandProperties.class));
                 command.execute(instances);
                 statusCode = command.getStatusCode();
 
@@ -128,15 +148,54 @@ public class HttpServer {
                 instances.outPutter.output("Ben запретил такое отправлять" + System.lineSeparator() + e.getMessage());
                 statusCode = 400;
             }
+            try {
+                writeLayer(socketChannel);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        };
+        service.execute(execution);
+    }
 
-            List<String> list = instances.outPutter.compound();
 
-            writeLayer(list, socketChannel);
+    public void run() throws IOException, NullPointerException {
+
+        try {
+            instances.dao = FileManipulator.get();
+        } catch (RuntimeException e) {
+            instances.outPutter.output(e.getMessage());
+            instances.dao = new DragonDAO();
+        }
 
 
-            Autosaver.autosave(instances);
-
-            list.clear();
+        while (true) {
+            SocketChannel socketChannel = serverSocketChannel.accept();
+            //String input = read(socketChannel);
+            statusCode = 200;
+            commandWay(socketChannel);
+//            try {
+//                Command command = Command.restoreFromProperties(Json.fromJson(Json.parse(input), CommandProperties.class));
+//                command.execute(instances);
+//                statusCode = command.getStatusCode();
+//
+//
+//            } catch (JsonParseException e) {
+//                instances.outPutter.output("Ben запретил такое отправлять" + System.lineSeparator() + e.getMessage());
+//                statusCode = 400;
+//
+//            } catch (IOException e) {
+//                instances.outPutter.output("Ben запретил такое отправлять" + System.lineSeparator() + e.getMessage());
+//                statusCode = 400;
+//            }
+//
+//            List<String> list = instances.outPutter.compound();
+//
+//            writeLayer(socketChannel);
+//
+//
+//            Autosaver.autosave(instances);
+//
+//            list.clear();
 
 //            if (input.equals("Send me logins")) {
 //                instances.outPutter.output(getLogins());

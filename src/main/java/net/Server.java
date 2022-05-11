@@ -103,7 +103,7 @@ public class Server {
     private static void write(SelectionKey key, String msg) throws IOException {
         DatagramChannel channel = (DatagramChannel) key.channel();
         ClientClass client = (ClientClass) key.attachment();
-        int bytesSent = channel.send(StandardCharsets.UTF_16.encode(msg), client.clientAddress);
+        channel.send(StandardCharsets.UTF_16.encode(msg), client.clientAddress);
     }
 
 
@@ -111,6 +111,7 @@ public class Server {
         public SocketAddress clientAddress;
         public ByteBuffer buffer = ByteBuffer.allocate(1024);
     }
+
 }
 
 

@@ -16,7 +16,7 @@ public class Main {
     }
 }
 
-class Client1{
+class HttpClient1{
     public static void main(String[] args) throws InterruptedException {
         try {
             HttpClientLayer layer = new HttpClientLayer("localhost", 80);
@@ -29,7 +29,7 @@ class Client1{
 }
 
 
-class Client2{
+class HttpClient2{
     public static void main(String[] args) throws InterruptedException {
         try {
             HttpClientLayer layer2 = new HttpClientLayer("localhost", 80);
